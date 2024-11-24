@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/anaskhan96/soup"
 	"github.com/la-plas-growth/GO-DockerLint-AI/env"
 	"github.com/la-plas-growth/GO-DockerLint-AI/lib"
 	"github.com/sashabaranov/go-openai"
@@ -36,6 +38,20 @@ func NewService(configuration *env.Configuration, logger *zap.SugaredLogger) ISe
 	}
 }
 
+// fetch bestpractice from html
+func (s *service) FetchBestPracticesMarkdown() (string, error) {
+	s.logger.Debugf("Fetching best practices from URL: %s", s.configuration.BestPracticesURL)
+	resp, err := soup.Get(s.configuration.BestPracticesURL)
+	//
+	if err != nil {
+		s.logger.Errorf("Unexpected status code: %d", err)
+		return "", fmt.Errorf("unexpected status code: %d", err)
+	}
+	doc := soup.HTMLParse(resp)
+	//
+	return doc.FullText(), nil
+}
+
 // Create the finale Dockerfile
 func (s *service) CreateDockerFile(lang string) (*DockerfileResponse, error) {
 	s.logger.Debugf("Create DockerFile with OpenAI for lang: %s", lang)
@@ -61,6 +77,19 @@ func (s *service) getDockerfileWithChatGPT(lang string) (*DockerfileResponse, er
 	// Construct the prompt for OpenAI
 	prompt := fmt.Sprintf(`Create a Dockerfile for this language: %s`, lang)
 	s.logger.Debugf("prompt: %s", prompt)
+
+	// Fetch best practices content
+	bestPractices, err := s.FetchBestPracticesMarkdown()
+	if err != nil {
+		s.logger.Errorf("Failed to fetch best practices: %v", err)
+		return nil, err
+	}
+
+	cleanedBestPractices := strings.ReplaceAll(bestPractices, "\n", " ")
+
+	// Construct the system prompt
+	sysprompt := fmt.Sprintf(`You are an expert Dockerfile creator who strictly adheres to the following best practices: %s`, cleanedBestPractices)
+
 	// Define the JSON schema for the response
 	schema := createSchemaGpt()
 
@@ -87,7 +116,7 @@ func (s *service) getDockerfileWithChatGPT(lang string) (*DockerfileResponse, er
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    "system",
-				Content: "You are a Dockerfile",
+				Content: sysprompt,
 			},
 			{
 				Role:    "user",
