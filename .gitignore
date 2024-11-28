@@ -28,3 +28,4 @@ go.work.sum
 GO-DockerLint-AI
 go-dockerlint-ai*
 go-docker-ai-linux-amd64
+Dockerfile
